@@ -47,15 +47,57 @@
     }
     #startBtn { background: #0a0; color: white; }
     #stopBtn { background: #a00; color: white; }
+    #resultModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: #222;
+      padding: 30px;
+      border-radius: 10px;
+      text-align: center;
+      max-width: 80%;
+      border: 2px solid #0a0;
+    }
+    .success { color: #0f0; }
+    .error { color: #f44; }
+    #closeModal {
+      margin-top: 20px;
+      padding: 8px 20px;
+      background: #333;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #closeModal:hover {
+      background: #444;
+    }
   </style>
 </head>
 <body>
   <h2>Barcode Scanner (Code128 & Code39, Any Angle)</h2>
   <div id="scanner"></div>
-  <div id="result">Result: (waiting...)</div>
+  <div id="result">Click 'Start Scanning' to begin</div>
   <div id="controls">
     <button id="startBtn">Start Scanning</button>
     <button id="stopBtn" disabled>Stop Scanning</button>
+  </div>
+
+  <div id="resultModal">
+    <div class="modal-content">
+      <h2 id="modalTitle" class="success">Scan Successful!</h2>
+      <p id="modalMessage">Barcode: <span id="barcodeResult"></span></p>
+      <button id="closeModal">Close</button>
+    </div>
   </div>
 
   <script>
@@ -64,9 +106,9 @@
 
     function onProcessed(result) {
       if (result && result.codeResult) {
-        console.log("🔎 Frame processed:", result.codeResult.code || "no code");
+        console.log(" Frame processed:", result.codeResult.code || "no code");
       } else {
-        console.log("🔎 Frame processed: no detection");
+        console.log(" Frame processed: no detection");
       }
     }
 
@@ -74,21 +116,15 @@
       if (!result || !result.codeResult || !result.codeResult.code) return;
 
       const code = result.codeResult.code.trim();
-      console.log("📦 Raw detection:", code, "Confidence:", result.codeResult.decodedCodes[0].error);
+      console.log(" Raw detection:", code);
 
       if (formatRegex.test(code)) {
-        const resultElement = $("#result");
-        resultElement.html(`✅ <strong>Valid Scan:</strong> ${code}`);
-        console.log("✅ Valid code matched:", code);
+        showModal(" Scan Successful!", code, true);
+        console.log(" Valid code matched:", code);
         stopScanner();
-        
-        // Optional: Auto-restart after a delay
-        setTimeout(() => {
-          if (!scanning) startScanner();
-        }, 2000);
       } else {
-        $("#result").html(`❌ <span style="color: #ff6b6b">Invalid format:</span> ${code}`);
-        console.warn("❌ Invalid format:", code);
+        $("#result").html(` <span style="color: #ff6b6b">Invalid format:</span> ${code}`);
+        console.warn(" Invalid format:", code);
       }
     }
 
@@ -96,7 +132,7 @@
       if (scanning) return;
       
       // Clear previous results and errors
-      $("#result").html("🔍 <em>Initializing camera...</em>");
+      $("#result").html(" Initializing camera...");
       
       scanning = true;
       $("#startBtn").prop("disabled", true);
@@ -136,7 +172,7 @@
       Quagga.init(constraints, function(err) {
         if (err) {
           console.error("Quagga initialization error:", err);
-          $("#result").html(`❌ <span style="color: #ff6b6b">Error:</span> ${err.message || 'Failed to initialize scanner'}`);
+          $("#result").html(` <span style="color: #ff6b6b">Error:</span> ${err.message || 'Failed to initialize scanner'}`);
           scanning = false;
           $("#startBtn").prop("disabled", false);
           $("#stopBtn").prop("disabled", true);
@@ -144,8 +180,8 @@
         }
         
         Quagga.start();
-        console.log("📷 Camera streaming started");
-        $("#result").html("🔍 <em>Ready to scan barcodes...</em>");
+        console.log(" Camera streaming started");
+        $("#result").html(" Ready to scan barcodes...");
       });
 
       Quagga.onProcessed(onProcessed);
@@ -163,18 +199,41 @@
       Quagga.offDetected(onDetected);
 
       Quagga.stop();
-      console.log("🛑 Scanner stopped");
+      console.log(" Scanner stopped");
 
       const video = document.querySelector("#scanner video");
       if (video && video.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
         video.srcObject = null;
-        console.log("🎥 Camera stream tracks stopped.");
+        console.log(" Camera stream tracks stopped.");
       }
 
       $("#scanner").empty();
       $("#result").text("Result: (stopped)");
     }
+
+    function showModal(title, message, isSuccess = true) {
+      const modal = document.getElementById('resultModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalMessage = document.getElementById('modalMessage');
+      
+      modalTitle.textContent = title;
+      modalTitle.className = isSuccess ? 'success' : 'error';
+      document.getElementById('barcodeResult').textContent = message;
+      modal.style.display = 'flex';
+      
+      // Stop scanning when modal is shown
+      if (isSuccess) {
+        stopScanner();
+      }
+    }
+
+    document.getElementById('closeModal').addEventListener('click', function() {
+      document.getElementById('resultModal').style.display = 'none';
+      if (!scanning) {
+        startScanner(); // Restart scanning when modal is closed
+      }
+    });
 
     $(document).ready(function() {
       $("#startBtn").on("click", startScanner);
@@ -183,4 +242,3 @@
   </script>
 </body>
 </html>
-
