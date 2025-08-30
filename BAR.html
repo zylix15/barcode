@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner (Code128 & Code39 - Any Angle)</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      color: lime;
+      font-family: monospace;
+      text-align: center;
+    }
+    #scanner {
+      width: 100%;
+      height: 70vh;
+      background: #111;
+      position: relative;
+      overflow: hidden;
+    }
+    #scanner > canvas, video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #result {
+      font-size: 22px;
+      font-weight: bold;
+      margin-top: 15px;
+    }
+    #controls {
+      margin-top: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 0 10px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+    #startBtn { background: #0a0; color: white; }
+    #stopBtn { background: #a00; color: white; }
+  </style>
+</head>
+<body>
+  <h2>Barcode Scanner (Code128 & Code39, Any Angle)</h2>
+  <div id="scanner"></div>
+  <div id="result">Result: (waiting...)</div>
+  <div id="controls">
+    <button id="startBtn">Start Scanning</button>
+    <button id="stopBtn" disabled>Stop Scanning</button>
+  </div>
+
+  <script>
+    let scanning = false;
+    const formatRegex = /^[A-Z]\d{2}-\d{5}$/; // LNN-NNNNN
+
+    function onProcessed(result) {
+      if (result && result.codeResult) {
+        console.log("🔎 Frame processed:", result.codeResult.code || "no code");
+      } else {
+        console.log("🔎 Frame processed: no detection");
+      }
+    }
+
+    function onDetected(result) {
+      if (!result || !result.codeResult || !result.codeResult.code) return;
+
+      const code = result.codeResult.code.trim();
+      console.log("📦 Raw detection:", code, "Confidence:", result.codeResult.decodedCodes[0].error);
+
+      if (formatRegex.test(code)) {
+        const resultElement = $("#result");
+        resultElement.html(`✅ <strong>Valid Scan:</strong> ${code}`);
+        console.log("✅ Valid code matched:", code);
+        stopScanner();
+        
+        // Optional: Auto-restart after a delay
+        setTimeout(() => {
+          if (!scanning) startScanner();
+        }, 2000);
+      } else {
+        $("#result").html(`❌ <span style="color: #ff6b6b">Invalid format:</span> ${code}`);
+        console.warn("❌ Invalid format:", code);
+      }
+    }
+
+    function startScanner() {
+      if (scanning) return;
+      
+      // Clear previous results and errors
+      $("#result").html("🔍 <em>Initializing camera...</em>");
+      
+      scanning = true;
+      $("#startBtn").prop("disabled", true);
+      $("#stopBtn").prop("disabled", false);
+
+      const constraints = {
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector("#scanner"),
+          constraints: {
+            facingMode: "environment",
+            width: { min: 640, ideal: 1920, max: 1920 },
+            height: { min: 480, ideal: 1080, max: 1080 },
+            aspectRatio: { ideal: 1.7777777778 } // 16:9
+          },
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        decoder: {
+          readers: ["code_128_reader", "code_39_reader"],
+          multiple: false
+        },
+        locate: true,
+        numOfWorkers: Math.min(4, navigator.hardwareConcurrency || 2),
+        frequency: 10,
+        debug: {
+          drawBoundingBox: true,
+          showFrequency: true,
+          drawScanline: true,
+          showPattern: true
+        }
+      };
+
+      Quagga.init(constraints, function(err) {
+        if (err) {
+          console.error("Quagga initialization error:", err);
+          $("#result").html(`❌ <span style="color: #ff6b6b">Error:</span> ${err.message || 'Failed to initialize scanner'}`);
+          scanning = false;
+          $("#startBtn").prop("disabled", false);
+          $("#stopBtn").prop("disabled", true);
+          return;
+        }
+        
+        Quagga.start();
+        console.log("📷 Camera streaming started");
+        $("#result").html("🔍 <em>Ready to scan barcodes...</em>");
+      });
+
+      Quagga.onProcessed(onProcessed);
+      Quagga.onDetected(onDetected);
+    }
+
+    function stopScanner() {
+      if (!scanning) return;
+      scanning = false;
+
+      $("#startBtn").prop("disabled", false);
+      $("#stopBtn").prop("disabled", true);
+
+      Quagga.offProcessed(onProcessed);
+      Quagga.offDetected(onDetected);
+
+      Quagga.stop();
+      console.log("🛑 Scanner stopped");
+
+      const video = document.querySelector("#scanner video");
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+        console.log("🎥 Camera stream tracks stopped.");
+      }
+
+      $("#scanner").empty();
+      $("#result").text("Result: (stopped)");
+    }
+
+    $(document).ready(function() {
+      $("#startBtn").on("click", startScanner);
+      $("#stopBtn").on("click", stopScanner);
+    });
+  </script>
+</body>
+</html>
