@@ -47,197 +47,88 @@
     }
     #startBtn { background: #0a0; color: white; }
     #stopBtn { background: #a00; color: white; }
-    #resultModal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-content {
-      background: #222;
-      padding: 30px;
-      border-radius: 10px;
-      text-align: center;
-      max-width: 80%;
-      border: 2px solid #0a0;
-    }
-    .success { color: #0f0; }
-    .error { color: #f44; }
-    #closeModal {
-      margin-top: 20px;
-      padding: 8px 20px;
-      background: #333;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    #closeModal:hover {
-      background: #444;
-    }
   </style>
 </head>
 <body>
   <h2>Barcode Scanner (Code128 & Code39, Any Angle)</h2>
   <div id="scanner"></div>
-  <div id="result">Click 'Start Scanning' to begin</div>
+  <div id="result">Ready to scan</div>
   <div id="controls">
     <button id="startBtn">Start Scanning</button>
     <button id="stopBtn" disabled>Stop Scanning</button>
-  </div>
-
-  <div id="resultModal">
-    <div class="modal-content">
-      <h2 id="modalTitle" class="success">Scan Successful!</h2>
-      <p id="modalMessage">Barcode: <span id="barcodeResult"></span></p>
-      <button id="closeModal">Close</button>
-    </div>
   </div>
 
   <script>
     let scanning = false;
     const formatRegex = /^[A-Z]\d{2}-\d{5}$/; // LNN-NNNNN
 
-    function onProcessed(result) {
-      if (result && result.codeResult) {
-        console.log(" Frame processed:", result.codeResult.code || "no code");
-      } else {
-        console.log(" Frame processed: no detection");
-      }
-    }
-
-    function onDetected(result) {
-      if (!result || !result.codeResult || !result.codeResult.code) return;
-
-      const code = result.codeResult.code.trim();
-      console.log(" Raw detection:", code);
-
-      if (formatRegex.test(code)) {
-        showModal(" Scan Successful!", code, true);
-        console.log(" Valid code matched:", code);
-        stopScanner();
-      } else {
-        $("#result").html(` <span style="color: #ff6b6b">Invalid format:</span> ${code}`);
-        console.warn(" Invalid format:", code);
-      }
-    }
-
     function startScanner() {
-      if (scanning) return;
-      
-      // Clear previous results and errors
-      $("#result").html(" Initializing camera...");
+      if (scanning) {
+        return;
+      }
       
       scanning = true;
-      $("#startBtn").prop("disabled", true);
-      $("#stopBtn").prop("disabled", false);
+      $('#startBtn').prop('disabled', true);
+      $('#stopBtn').prop('disabled', false);
+      $('#result').text(' Scanning...');
 
-      const constraints = {
+      Quagga.init({
         inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: document.querySelector("#scanner"),
-          constraints: {
-            facingMode: "environment",
-            width: { min: 640, ideal: 1920, max: 1920 },
-            height: { min: 480, ideal: 1080, max: 1080 },
-            aspectRatio: { ideal: 1.7777777778 } // 16:9
-          },
+          name: 'Live',
+          type: 'LiveStream',
+          target: document.querySelector('#scanner'),
+          constraints: { facingMode: 'environment' }
         },
-        locator: {
-          patchSize: "medium",
-          halfSample: true
-        },
-        decoder: {
-          readers: ["code_128_reader", "code_39_reader"],
-          multiple: false
-        },
-        locate: true,
-        numOfWorkers: Math.min(4, navigator.hardwareConcurrency || 2),
-        frequency: 10,
-        debug: {
-          drawBoundingBox: true,
-          showFrequency: true,
-          drawScanline: true,
-          showPattern: true
-        }
-      };
-
-      Quagga.init(constraints, function(err) {
+        decoder: { readers: ['code_128_reader', 'code_39_reader'] }
+      }, function(err) {
         if (err) {
-          console.error("Quagga initialization error:", err);
-          $("#result").html(` <span style="color: #ff6b6b">Error:</span> ${err.message || 'Failed to initialize scanner'}`);
-          scanning = false;
-          $("#startBtn").prop("disabled", false);
-          $("#stopBtn").prop("disabled", true);
-          return;
+          alert('Scanner error: ' + (err.message || 'Failed to start'));
+          stopScanner();
+        } else {
+          Quagga.start();
         }
-        
-        Quagga.start();
-        console.log(" Camera streaming started");
-        $("#result").html(" Ready to scan barcodes...");
       });
 
-      Quagga.onProcessed(onProcessed);
-      Quagga.onDetected(onDetected);
+      Quagga.onDetected(function(result) {
+        if (result && result.codeResult && result.codeResult.code) {
+          const code = result.codeResult.code.trim();
+          const isValid = formatRegex.test(code);
+          if (isValid) {
+            alert(' Valid: ' + code);
+            stopScanner();
+          } else {
+            alert(' Invalid: ' + code);
+          }
+        }
+      });
     }
 
     function stopScanner() {
-      if (!scanning) return;
-      scanning = false;
-
-      $("#startBtn").prop("disabled", false);
-      $("#stopBtn").prop("disabled", true);
-
-      Quagga.offProcessed(onProcessed);
-      Quagga.offDetected(onDetected);
-
-      Quagga.stop();
-      console.log(" Scanner stopped");
-
-      const video = document.querySelector("#scanner video");
-      if (video && video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
-        console.log(" Camera stream tracks stopped.");
-      }
-
-      $("#scanner").empty();
-      $("#result").text("Result: (stopped)");
-    }
-
-    function showModal(title, message, isSuccess = true) {
-      const modal = document.getElementById('resultModal');
-      const modalTitle = document.getElementById('modalTitle');
-      const modalMessage = document.getElementById('modalMessage');
-      
-      modalTitle.textContent = title;
-      modalTitle.className = isSuccess ? 'success' : 'error';
-      document.getElementById('barcodeResult').textContent = message;
-      modal.style.display = 'flex';
-      
-      // Stop scanning when modal is shown
-      if (isSuccess) {
-        stopScanner();
-      }
-    }
-
-    document.getElementById('closeModal').addEventListener('click', function() {
-      document.getElementById('resultModal').style.display = 'none';
       if (!scanning) {
-        startScanner(); // Restart scanning when modal is closed
+        return;
       }
-    });
+      
+      Quagga.offDetected();
+      Quagga.stop();
+      
+      $('video').each(function() {
+        if (this.srcObject) {
+          this.srcObject.getTracks().forEach(function(track) {
+            track.stop();
+          });
+        }
+      });
+      
+      $('#scanner').empty();
+      $('#startBtn').prop('disabled', false);
+      $('#stopBtn').prop('disabled', true);
+      $('#result').text('Ready to scan');
+      scanning = false;
+    }
 
-    $(document).ready(function() {
-      $("#startBtn").on("click", startScanner);
-      $("#stopBtn").on("click", stopScanner);
+    $(function() {
+      $('#startBtn').click(startScanner);
+      $('#stopBtn').click(stopScanner);
     });
   </script>
 </body>
